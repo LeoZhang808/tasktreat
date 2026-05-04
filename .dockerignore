@@ -1,0 +1,39 @@
+# Build context is the repo root, so keep it lean.
+**/node_modules
+**/dist
+**/build
+
+# Local env files (each service reads env from compose, not from baked-in files).
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Logs / caches.
+*.log
+**/*.log
+.cache
+**/.cache
+
+# VCS / editor / OS noise.
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Prisma generated client is rebuilt inside the image.
+services/*/prisma/generated
+
+# Frontend artifacts that get rebuilt inside the image.
+frontend/dist
+frontend/.vite
+
+# Test/coverage output.
+coverage
+.nyc_output
+
+# Docker / compose noise (don't ship them into images).
+docker-compose*.yml
+**/Dockerfile
+**/.dockerignore

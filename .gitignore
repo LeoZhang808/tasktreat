@@ -1,0 +1,67 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+
+*.log
+npm-debug.log*
+
+.DS_Store
+.vscode/
+.idea/
+
+coverage/
+.nyc_output/
+
+frontend/dist/
+services/*/dist/
+services/*/node_modules/
+
+services/*/prisma/.env
+services/*/prisma/generated/
+.cache/
+
+# --- Terraform ---------------------------------------------------------------
+# Local Terraform working directories and plugins.
+**/.terraform/
+**/.terraform.lock.hcl.local
+
+# State files. Real state lives in S3; never commit the local copy.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# Plan output and override files.
+*.tfplan
+*_override.tf
+*_override.tf.json
+override.tf
+override.tf.json
+
+# Variables. Only the *.example files should be committed; real tfvars often
+# contain secrets like the DB password.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+
+# --- Kubernetes -------------------------------------------------------------
+# Only the example secret manifest should ever be committed. Anything matching
+# `secret*.yaml` under k8s/ is assumed to contain real credentials.
+k8s/**/secret.yaml
+k8s/**/secrets.yaml
+k8s/**/*.secret.yaml
+!k8s/**/secrets.example.yaml
+
+# Step 5 ingress overlay patch is rendered from a template at deploy time
+# and contains the environment-specific ACM cert ARN. The template
+# (ingress-patch.yaml.template) IS committed.
+k8s/overlays/*/ingress-patch.yaml
+
+
+# Local plan output (filename without extension)
+tfplan

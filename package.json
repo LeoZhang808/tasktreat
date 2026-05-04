@@ -1,0 +1,27 @@
+{
+  "name": "tasktreat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TaskTreat — Jira-style task tracker with a weekly reward twist. Monorepo: React/Vite frontend + 3 TypeScript/Express/Prisma microservices.",
+  "workspaces": [
+    "frontend",
+    "services/task-service",
+    "services/wishlist-service",
+    "services/reward-service"
+  ],
+  "scripts": {
+    "dev:db": "docker compose up -d postgres",
+    "dev:db:down": "docker compose down",
+    "dev:task": "npm -w task-service run dev",
+    "dev:wishlist": "npm -w wishlist-service run dev",
+    "dev:reward": "npm -w reward-service run dev",
+    "dev:frontend": "npm -w frontend run dev",
+    "dev": "concurrently -n task,wishlist,reward,frontend -c blue,magenta,yellow,green \"npm:dev:task\" \"npm:dev:wishlist\" \"npm:dev:reward\" \"npm:dev:frontend\"",
+    "db:migrate": "npm -w task-service run db:migrate && npm -w wishlist-service run db:migrate && npm -w reward-service run db:migrate",
+    "db:seed": "npm -w task-service run db:seed && npm -w wishlist-service run db:seed && npm -w reward-service run db:seed",
+    "build": "npm -w task-service run build && npm -w wishlist-service run build && npm -w reward-service run build && npm -w frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
