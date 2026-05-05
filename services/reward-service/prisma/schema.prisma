@@ -1,0 +1,31 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+  output          = "../prisma/generated"
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["reward"]
+}
+
+model WeeklyReward {
+  id                         Int      @id @default(autoincrement())
+  wishlistItemId             Int      @map("wishlist_item_id")
+  wishlistItemNameSnapshot   String   @map("wishlist_item_name_snapshot")
+  wishlistItemPriceSnapshot  Decimal  @map("wishlist_item_price_snapshot") @db.Decimal(10, 2)
+  weekStart                  DateTime @map("week_start") @db.Date
+  weekEnd                    DateTime @map("week_end") @db.Date
+  tasksCompleted             Int      @map("tasks_completed")
+  rewardValuePerTask         Decimal  @map("reward_value_per_task") @db.Decimal(10, 2)
+  rewardBudget               Decimal  @map("reward_budget") @db.Decimal(10, 2)
+  selectionWeight            Decimal  @map("selection_weight") @db.Decimal(10, 2)
+  selectedAt                 DateTime @default(now()) @map("selected_at")
+
+  @@unique([weekStart])
+  @@index([weekStart])
+  @@map("weekly_rewards")
+  @@schema("reward")
+}
