@@ -1,0 +1,45 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+  output          = "../prisma/generated"
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["task"]
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  DOING
+  DONE
+
+  @@schema("task")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+
+  @@schema("task")
+}
+
+model Task {
+  id          Int           @id @default(autoincrement())
+  title       String
+  description String?
+  status      TaskStatus    @default(BACKLOG)
+  priority    TaskPriority?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  completedAt DateTime?     @map("completed_at")
+
+  @@index([status])
+  @@index([completedAt])
+  @@map("tasks")
+  @@schema("task")
+}
