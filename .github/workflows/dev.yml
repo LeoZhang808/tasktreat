@@ -1,0 +1,119 @@
+name: Deploy Dev
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tasktreat-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Install Kustomize
+        run: |
+          set -euo pipefail
+          KVER=5.4.2
+          curl -fsSL -o kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KVER}/kustomize_v${KVER}_linux_amd64.tar.gz"
+          tar -xzf kustomize.tar.gz kustomize
+          sudo mv kustomize /usr/local/bin/
+          kustomize version
+
+      - id: meta
+        name: Git short SHA
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push all images
+        env:
+          TAG: dev-${{ steps.meta.outputs.short }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "tasktreat-dev-task-service:services/task-service/Dockerfile" \
+            "tasktreat-dev-wishlist-service:services/wishlist-service/Dockerfile" \
+            "tasktreat-dev-reward-service:services/reward-service/Dockerfile" \
+            "tasktreat-dev-frontend:frontend/Dockerfile"
+          do
+            repo="${spec%%:*}"
+            file="${spec##*:}"
+            image="${ECR_REGISTRY}/${repo}:${TAG}"
+            docker build --platform linux/amd64 -f "$file" -t "$image" .
+            docker push "$image"
+          done
+
+      - name: Render dev ingress patch
+        env:
+          APP_FQDN: ${{ vars.APP_FQDN }}
+          ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
+        run: |
+          set -euo pipefail
+          sed -e "s|__APP_FQDN__|${APP_FQDN}|g" \
+            -e "s|__ACM_CERTIFICATE_ARN__|${ACM_CERTIFICATE_ARN}|g" \
+            k8s/overlays/dev/ingress-patch.yaml.template \
+            >k8s/overlays/dev/ingress-patch.yaml
+
+      - name: Kustomize set image (dev)
+        env:
+          TAG: dev-${{ steps.meta.outputs.short }}
+        run: |
+          set -euo pipefail
+          cd k8s/overlays/dev
+          kustomize edit set image \
+            tasktreat-dev-task-service="${ECR_REGISTRY}/tasktreat-dev-task-service:${TAG}" \
+            tasktreat-dev-wishlist-service="${ECR_REGISTRY}/tasktreat-dev-wishlist-service:${TAG}" \
+            tasktreat-dev-reward-service="${ECR_REGISTRY}/tasktreat-dev-reward-service:${TAG}" \
+            tasktreat-dev-frontend="${ECR_REGISTRY}/tasktreat-dev-frontend:${TAG}"
+
+      - name: kubeconfig
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: kubectl apply (dev)
+        run: kubectl apply -k k8s/overlays/dev
+
+      - name: Rollout status
+        run: |
+          set -euo pipefail
+          ns=tasktreat-dev
+          kubectl rollout status deployment/frontend -n "$ns" --timeout=180s
+          kubectl rollout status deployment/task-service -n "$ns" --timeout=180s
+          kubectl rollout status deployment/wishlist-service -n "$ns" --timeout=180s
+          kubectl rollout status deployment/reward-service -n "$ns" --timeout=180s
+
+      - name: Smoke tests
+        env:
+          ENVIRONMENT: dev
+          NAMESPACE: tasktreat-dev
+        run: ./scripts/ci-smoke-test.sh
