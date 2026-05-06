@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tasktreat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tasktreat
+      POSTGRES_PASSWORD: tasktreat
+      POSTGRES_DB: tasktreat
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasktreat -d tasktreat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  task-service:
+    build:
+      context: .
+      dockerfile: services/task-service/Dockerfile
+    container_name: tasktreat-task-service
+    restart: unless-stopped
+    environment:
+      # Each service owns its own Postgres schema in the shared DB.
+      DATABASE_URL: postgresql://tasktreat:tasktreat@postgres:5432/tasktreat?schema=task
+      PORT: "4001"
+      NODE_ENV: production
+    ports:
+      - "4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4001/health >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  wishlist-service:
+    build:
+      context: .
+      dockerfile: services/wishlist-service/Dockerfile
+    container_name: tasktreat-wishlist-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://tasktreat:tasktreat@postgres:5432/tasktreat?schema=wishlist
+      PORT: "4002"
+      NODE_ENV: production
+    ports:
+      - "4002:4002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/health >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  reward-service:
+    build:
+      context: .
+      dockerfile: services/reward-service/Dockerfile
+    container_name: tasktreat-reward-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://tasktreat:tasktreat@postgres:5432/tasktreat?schema=reward
+      PORT: "4003"
+      # Service-to-service URLs use the compose service names on the default network.
+      TASK_SERVICE_URL: http://task-service:4001
+      WISHLIST_SERVICE_URL: http://wishlist-service:4002
+      REWARD_VALUE_PER_TASK: "5"
+      NODE_ENV: production
+    ports:
+      - "4003:4003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      task-service:
+        condition: service_healthy
+      wishlist-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/health >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: tasktreat-frontend
+    restart: unless-stopped
+    # Map host :5173 to nginx :80 so users visit http://localhost:5173 to match dev.
+    ports:
+      - "5173:80"
+    depends_on:
+      task-service:
+        condition: service_healthy
+      wishlist-service:
+        condition: service_healthy
+      reward-service:
+        condition: service_healthy
+    healthcheck:
+      # Use 127.0.0.1 explicitly: inside the container `localhost` resolves
+      # to ::1 first, but nginx only listens on IPv4 (0.0.0.0:80), so an
+      # IPv6 probe gets connection-refused and the container is marked
+      # unhealthy.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  pgdata: {}
