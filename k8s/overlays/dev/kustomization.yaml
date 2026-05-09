@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Pin every resource in the base to the tasktreat-dev namespace.
+namespace: tasktreat-dev
+
+resources:
+  - ../../base
+
+# `ingress-patch.yaml` is generated from `ingress-patch.yaml.template` by
+# `scripts/render-ingress-patch.sh`, which substitutes the live ACM cert
+# ARN and the public app FQDN from `terraform output`. The rendered file
+# is gitignored so a regenerated ARN never accidentally lands in Git.
+patches:
+  - path: ingress-patch.yaml
+    target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: tasktreat-ingress
+
+# Rewrite the short image names used in the base manifests to the actual
+# ECR repository URLs and the dev tag. Bumping `newTag` here is how we
+# promote a freshly pushed image without editing every Deployment.
+images:
+  - name: tasktreat-dev-task-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-task-service
+    newTag: dev-latest
+  - name: tasktreat-dev-wishlist-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-wishlist-service
+    newTag: dev-latest
+  - name: tasktreat-dev-reward-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-reward-service
+    newTag: dev-latest
+  - name: tasktreat-dev-frontend
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-frontend
+    newTag: dev-latest

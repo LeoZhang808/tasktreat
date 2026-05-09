@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tasktreat-prod
+
+resources:
+  - ../../base
+
+patches:
+  - path: namespace-patch.yaml
+    target:
+      kind: Namespace
+      name: tasktreat-dev
+  - path: ingress-delete.yaml
+    target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: tasktreat-ingress
+  - path: replicas-frontend.yaml
+    target:
+      kind: Deployment
+      name: frontend
+  - path: replicas-task-service.yaml
+    target:
+      kind: Deployment
+      name: task-service
+  - path: replicas-wishlist-service.yaml
+    target:
+      kind: Deployment
+      name: wishlist-service
+  - path: replicas-reward-service.yaml
+    target:
+      kind: Deployment
+      name: reward-service
+
+images:
+  - name: tasktreat-dev-task-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-task-service
+    newTag: v-buildme
+  - name: tasktreat-dev-wishlist-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-wishlist-service
+    newTag: v-buildme
+  - name: tasktreat-dev-reward-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-reward-service
+    newTag: v-buildme
+  - name: tasktreat-dev-frontend
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-frontend
+    newTag: v-buildme

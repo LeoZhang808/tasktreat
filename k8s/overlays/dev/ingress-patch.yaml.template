@@ -1,0 +1,49 @@
+# Template for the dev-specific Ingress patch. Rendered into
+# `ingress-patch.yaml` (gitignored) by `scripts/render-ingress-patch.sh`,
+# which fills in the variables below from `terraform output`.
+#
+# Variables:
+#   __APP_FQDN__              -> e.g. app.tasktreat.dev
+#   __ACM_CERTIFICATE_ARN__   -> e.g. arn:aws:acm:us-west-2:...:certificate/...
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tasktreat-ingress
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: __ACM_CERTIFICATE_ARN__
+    # Tag the ALB so we can find it later (e.g. when the Route 53 alias
+    # record is created out-of-band or by ExternalDNS in a future step).
+    alb.ingress.kubernetes.io/tags: Environment=dev,Project=tasktreat,ManagedBy=kubernetes
+spec:
+  rules:
+    - host: __APP_FQDN__
+      http:
+        paths:
+          - path: /api/tasks
+            pathType: Prefix
+            backend:
+              service:
+                name: task-service
+                port:
+                  number: 4001
+          - path: /api/wishlist
+            pathType: Prefix
+            backend:
+              service:
+                name: wishlist-service
+                port:
+                  number: 4002
+          - path: /api/rewards
+            pathType: Prefix
+            backend:
+              service:
+                name: reward-service
+                port:
+                  number: 4003
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
