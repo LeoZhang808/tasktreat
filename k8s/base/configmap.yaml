@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tasktreat-config
+  labels:
+    app.kubernetes.io/name: tasktreat
+    app.kubernetes.io/part-of: tasktreat
+data:
+  NODE_ENV: "production"
+  # Service-to-service URLs use the in-cluster ClusterIP DNS names.
+  # reward-service reads both of these to fan out to task-service and wishlist-service.
+  TASK_SERVICE_URL: "http://task-service:4001"
+  WISHLIST_SERVICE_URL: "http://wishlist-service:4002"
+  # Dollar value awarded to the user per completed task in a given week.
+  REWARD_VALUE_PER_TASK: "5"
