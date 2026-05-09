@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tasktreat-dev
+  labels:
+    app.kubernetes.io/name: tasktreat
+    app.kubernetes.io/environment: dev

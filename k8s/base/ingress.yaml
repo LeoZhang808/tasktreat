@@ -1,0 +1,86 @@
+###############################################################################
+# Public Ingress for TaskTreat (Step 5).
+#
+# This base resource is intentionally generic:
+#   * `spec.rules[].host` is empty so kustomize overlays can patch in the
+#     environment-specific FQDN (app.tasktreat.dev for dev).
+#   * The TLS cert ARN is injected via an overlay patch because each env
+#     gets its own ACM cert (different CN, different ARN).
+#
+# All path-based routing rules live here because the four service names and
+# ports are identical across environments.
+#
+# IMPORTANT: the catch-all "/" path MUST come last; otherwise the ALB sends
+# every request (including /api/...) to the frontend.
+###############################################################################
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tasktreat-ingress
+  labels:
+    app.kubernetes.io/name: tasktreat
+    app.kubernetes.io/part-of: tasktreat
+    app.kubernetes.io/component: ingress
+  annotations:
+    # IngressClass selector for the AWS Load Balancer Controller. Both
+    # `kubernetes.io/ingress.class` (legacy) and the spec-level
+    # `ingressClassName` are set so the controller picks this Ingress up
+    # regardless of which signal it prefers.
+    kubernetes.io/ingress.class: alb
+    # Public ALB facing the internet (overlays for private envs would flip
+    # this to `internal`).
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # Use the IP target type so the ALB sends traffic directly to pod IPs
+    # (via the AWS VPC CNI) instead of going through NodePorts. Required
+    # for ClusterIP backends like ours.
+    alb.ingress.kubernetes.io/target-type: ip
+    # Listen on both 80 and 443; the ssl-redirect annotation below
+    # 301s every HTTP request to HTTPS so plain HTTP is never served.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # The ALB health-checks every target group at "/". The frontend nginx
+    # always responds 200 there, and each backend service's `/health`
+    # also returns 200 — but using a single shared path keeps the Ingress
+    # simple and works because the backends 404 -> still reachable, while
+    # we override the path per-rule via `healthcheck-path` only when
+    # we add per-service health checks later.
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  ingressClassName: alb
+  rules:
+    # Host is patched in by the overlay (see overlays/dev/ingress-patch.yaml).
+    - host: REPLACE_ME_WITH_OVERLAY
+      http:
+        paths:
+          - path: /api/tasks
+            pathType: Prefix
+            backend:
+              service:
+                name: task-service
+                port:
+                  number: 4001
+          - path: /api/wishlist
+            pathType: Prefix
+            backend:
+              service:
+                name: wishlist-service
+                port:
+                  number: 4002
+          - path: /api/rewards
+            pathType: Prefix
+            backend:
+              service:
+                name: reward-service
+                port:
+                  number: 4003
+          # Catch-all for the SPA. MUST stay last.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
