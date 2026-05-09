@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tasktreat-qa
+
+resources:
+  - ../../base
+
+patches:
+  - path: namespace-patch.yaml
+    target:
+      kind: Namespace
+      name: tasktreat-dev
+  - path: ingress-delete.yaml
+    target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: tasktreat-ingress
+
+images:
+  - name: tasktreat-dev-task-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-task-service
+    newTag: qa-buildme
+  - name: tasktreat-dev-wishlist-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-wishlist-service
+    newTag: qa-buildme
+  - name: tasktreat-dev-reward-service
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-reward-service
+    newTag: qa-buildme
+  - name: tasktreat-dev-frontend
+    newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-frontend
+    newTag: qa-buildme
