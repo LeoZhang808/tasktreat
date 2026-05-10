@@ -1,108 +1,63 @@
 # TaskTreat
 
-> A productivity board that rewards you for completing tasks by selecting a weekly treat from your personal wishlist.
+Task tracker with a wishlist: you finish tasks, you earn a random weekly treat from items you said you want.
 
-TaskTreat is a Jira-style task tracker with a reward twist. You manage tasks across four Kanban columns (Backlog, Todo, Doing, Done) and maintain a wishlist of items you want to buy. Each week, the app picks a random reward item you've earned by completing tasks.
+Stack: React frontend (Vite), three Node services (task, wishlist, reward), Postgres. In AWS everything runs on EKS with RDS; Terraform owns the cloud bits. Details live in the other READMEs in this repo — this file is just the quick picture and how to run locally.
 
-This repo currently covers **Steps 1–5** of the project:
-
-- **Step 1** — application architecture, frontend, and three backend microservices.
-- **Step 2** — `docker-compose.yml` for local Postgres + multi-stage Dockerfiles per service / for the frontend.
-- **Step 3** — Terraform-managed AWS infrastructure (`infra/terraform/`): VPC, ECR, IAM, EKS, RDS.
-- **Step 4** — Kustomize-based Kubernetes manifests (`k8s/`) deploying the four images to EKS.
-- **Step 5** — Public ingress on a custom HTTPS domain (`https://app.tasktreat.dev`):
-  Route 53 hosted zone, ACM certificate, AWS Load Balancer Controller (IRSA), single
-  ALB doing path-based routing into the four ClusterIP services. See
-  [`docs/step5-ingress-dns-https.md`](docs/step5-ingress-dns-https.md).
-
-CI/CD, observability, canary rollouts, and chaos defense live in later steps.
-
-## Architecture at a glance
+Rough shape:
 
 ```
-React Frontend (Vite, port 5173)
-   |
-   | HTTP /api/...
-   v
-+-----------------------+----------------------------+
-| /api/tasks    -> task-service     (port 4001)      |
-| /api/wishlist -> wishlist-service (port 4002)      |
-| /api/rewards  -> reward-service   (port 4003)      |
-+----------------------------------------------------+
-   |
-   v
-PostgreSQL (single shared DB; one logical owner per table)
+Frontend (Vite)
+  -> /api/tasks     -> task-service     :4001
+  -> /api/wishlist  -> wishlist-service :4002
+  -> /api/rewards   -> reward-service   :4003  (calls the other two over HTTP)
+  -> Postgres (one DB; each service owns its own tables / Prisma schema)
 ```
 
-See [`docs/architecture.md`](docs/architecture.md), [`docs/api-contracts.md`](docs/api-contracts.md), and [`docs/reward-logic.md`](docs/reward-logic.md) for full detail.
+Where to read more:
 
-## Repository layout
+- `infra/terraform/README.md` — VPC, EKS, RDS, IAM, DNS, certs, remote state, Day 2 AMI bumps.
+- `k8s/README.md` — manifests, overlays (dev/qa/uat/prod), ingress and HTTPS, prod canary rollouts.
+- `frontend/README.md` — UI bits if you care.
+
+CI/CD is `.github/workflows/` (dev on push, QA nightly, UAT when you merge to main with RC in the commit message, prod on version tags). Monitoring is Helm under `infra/helm/monitoring/` plus `k8s/monitoring/`; wire secrets with `scripts/bootstrap-monitoring-secrets.sh` once you read the comments in the values file.
+
+Layout:
 
 ```
 tasktreat/
-  package.json              # npm workspaces root
-  docker-compose.yml        # Postgres only, port 5432
-  .env.example              # shared DATABASE_URL example
-  frontend/                 # Vite + React + TS + Tailwind + shadcn/ui
+  package.json
+  docker-compose.yml    # local Postgres only
+  frontend/
   services/
-    task-service/           # port 4001, owns tasks table
-    wishlist-service/       # port 4002, owns wishlist_items table
-    reward-service/         # port 4003, owns weekly_rewards table
-  docs/
+    task-service/
+    wishlist-service/
+    reward-service/
+  infra/terraform/
+  k8s/
 ```
 
-## Prerequisites
+## Local dev
 
-- Node.js 20+
-- npm 10+
-- Docker (for local Postgres)
+Need Node 20+, npm, Docker.
 
-## First-time setup
-
-```bash
+```
 cd tasktreat
-npm install                 # installs all workspaces
-
-npm run dev:db              # starts Postgres on :5432
-
-# Each service has its own Prisma schema; create tables for all three.
+npm install
+npm run dev:db
 npm run db:migrate
-
-# Optional but recommended for the demo flow
-npm run db:seed
+npm run db:seed    # optional
+npm run dev        # all four processes
 ```
 
-## Day-to-day
+Single services: `npm run dev:task`, `dev:wishlist`, `dev:reward`, `dev:frontend`. Vite proxies `/api/*` to the right port.
 
-```bash
-npm run dev                 # runs all 3 services + frontend concurrently
+Health:
+
 ```
-
-Or run them individually:
-
-```bash
-npm run dev:task            # task-service on :4001
-npm run dev:wishlist        # wishlist-service on :4002
-npm run dev:reward          # reward-service on :4003
-npm run dev:frontend        # frontend on :5173
-```
-
-The frontend's Vite dev server proxies `/api/tasks`, `/api/wishlist`, and `/api/rewards` to the corresponding service ports, so the React app only ever talks to `/api/...`.
-
-## Health checks
-
-Each service exposes `GET /health`:
-
-```bash
 curl localhost:4001/health
 curl localhost:4002/health
 curl localhost:4003/health
 ```
 
-## Demo flow
-
-1. Open the frontend at `http://localhost:5173`.
-2. Move a task to **Done** to bump the completed-this-week counter.
-3. Add a wishlist item or two.
-4. Click **Generate Weekly Treat** in the reward panel — `reward-service` calls both other services and picks a weighted-random eligible item.
-5. View **Reward History** to see prior weeks.
+Quick demo: open http://localhost:5173, move a task to Done, add wishlist items, hit Generate Weekly Treat, check Reward History.
