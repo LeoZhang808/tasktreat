@@ -1,6 +1,5 @@
+$patch: delete
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: task-service
-spec:
-  replicas: 2
+  name: reward-service

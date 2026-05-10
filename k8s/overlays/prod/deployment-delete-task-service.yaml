@@ -1,0 +1,8 @@
+# Removes the base task-service Deployment in prod -- a Rollout (see
+# rollouts/task-service-rollout.yaml) takes its place. dev/qa/uat still
+# use the base Deployment.
+$patch: delete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-service

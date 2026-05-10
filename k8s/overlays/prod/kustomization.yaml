@@ -5,6 +5,20 @@ namespace: tasktreat-prod
 
 resources:
   - ../../base
+  # Step 7: production swaps plain Deployments for Argo Rollouts to get
+  # progressive (canary) delivery. The base Deployments for these four
+  # workloads are removed in the patches block below.
+  - rollouts/task-service-rollout.yaml
+  - rollouts/wishlist-service-rollout.yaml
+  - rollouts/reward-service-rollout.yaml
+  - rollouts/frontend-rollout.yaml
+  # PodDisruptionBudgets keep at least one replica up during voluntary
+  # disruptions (node drain, cluster autoscaling), which is required for
+  # the zero-downtime guarantee.
+  - pdb/task-service-pdb.yaml
+  - pdb/wishlist-service-pdb.yaml
+  - pdb/reward-service-pdb.yaml
+  - pdb/frontend-pdb.yaml
 
 patches:
   - path: namespace-patch.yaml
@@ -17,23 +31,35 @@ patches:
       version: v1
       kind: Ingress
       name: tasktreat-ingress
-  - path: replicas-frontend.yaml
+  # Strip the base Deployments out of the prod overlay so we don't end up
+  # with both Deployment/foo and Rollout/foo fighting over the same pods.
+  - path: deployment-delete-task-service.yaml
     target:
-      kind: Deployment
-      name: frontend
-  - path: replicas-task-service.yaml
-    target:
+      group: apps
+      version: v1
       kind: Deployment
       name: task-service
-  - path: replicas-wishlist-service.yaml
+  - path: deployment-delete-wishlist-service.yaml
     target:
+      group: apps
+      version: v1
       kind: Deployment
       name: wishlist-service
-  - path: replicas-reward-service.yaml
+  - path: deployment-delete-reward-service.yaml
     target:
+      group: apps
+      version: v1
       kind: Deployment
       name: reward-service
+  - path: deployment-delete-frontend.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: frontend
 
+# kustomize image transformer applies to the pod template inside Rollouts the
+# same way it does inside Deployments (matches by image name, not by Kind).
 images:
   - name: tasktreat-dev-task-service
     newName: 066263929068.dkr.ecr.us-west-2.amazonaws.com/tasktreat-dev-task-service
