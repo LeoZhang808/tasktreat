@@ -24,7 +24,13 @@ patches:
   # The base no longer renders a Namespace (cluster-scoped, managed
   # out-of-band), so namespace-patch.yaml in this dir is kept only for
   # reference. See k8s/README.md for the one-time `kubectl create namespace`.
-  - path: ingress-delete.yaml
+  #
+  # ingress-patch.yaml is gitignored and is rendered from
+  # ingress-patch.yaml.template at deploy time by either
+  # scripts/render-ingress-patch.sh (local) or the equivalent step in
+  # .github/workflows/release-prod.yml (CI). This is what makes prod the
+  # owner of the public app.tasktreat.dev hostname.
+  - path: ingress-patch.yaml
     target:
       group: networking.k8s.io
       version: v1
