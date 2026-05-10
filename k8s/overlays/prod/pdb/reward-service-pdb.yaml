@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: reward-service-pdb
+  labels:
+    app.kubernetes.io/name: reward-service
+    app.kubernetes.io/part-of: tasktreat
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: reward-service

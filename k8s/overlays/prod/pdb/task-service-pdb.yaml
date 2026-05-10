@@ -1,0 +1,20 @@
+###############################################################################
+# Voluntary-disruption budget for task-service in production.
+#
+# With replicas: 2 and minAvailable: 1, kubectl drain / cluster autoscaler /
+# karpenter consolidation can only evict one of the two pods at a time --
+# the API server rejects a second concurrent eviction. This is what makes
+# the Day-2 OS-patching story safe later on.
+###############################################################################
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: task-service-pdb
+  labels:
+    app.kubernetes.io/name: task-service
+    app.kubernetes.io/part-of: tasktreat
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-service
