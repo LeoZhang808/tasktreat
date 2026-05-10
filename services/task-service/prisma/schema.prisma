@@ -37,6 +37,7 @@ model Task {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
   completedAt DateTime?     @map("completed_at")
+  demofield   String?       @map("demo_field")
 
   @@index([status])
   @@index([completedAt])
