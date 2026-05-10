@@ -42,6 +42,19 @@ jobs:
         with:
           version: v1.30.0
 
+      - name: Install kubectl argo rollouts plugin
+        # Lets us run `kubectl argo rollouts get rollout ... --watch` and
+        # `... status ... --watch` to wait for canary completion. Without the
+        # plugin we'd be limited to `kubectl get rollout` polling.
+        run: |
+          set -euo pipefail
+          ARGO_VER=v1.7.2
+          curl -fsSL -o kubectl-argo-rollouts \
+            "https://github.com/argoproj/argo-rollouts/releases/download/${ARGO_VER}/kubectl-argo-rollouts-linux-amd64"
+          chmod +x kubectl-argo-rollouts
+          sudo mv kubectl-argo-rollouts /usr/local/bin/
+          kubectl argo rollouts version
+
       - name: Install Kustomize
         run: |
           set -euo pipefail
@@ -95,14 +108,20 @@ jobs:
       - name: kubectl apply (prod)
         run: kubectl apply -k k8s/overlays/prod
 
-      - name: Rollout status
+      - name: Wait for canary rollouts to finish
+        # Step 7: prod uses Argo Rollouts, not plain Deployments, so the old
+        # `kubectl rollout status deployment/...` is not the right wait gate.
+        # `kubectl argo rollouts status --watch` blocks until the rollout
+        # reaches Healthy (all canary steps completed) or fails. Timeout is
+        # generous because each rollout has two 60s pauses by design.
         run: |
           set -euo pipefail
           ns=tasktreat-prod
-          kubectl rollout status deployment/frontend -n "$ns" --timeout=180s
-          kubectl rollout status deployment/task-service -n "$ns" --timeout=180s
-          kubectl rollout status deployment/wishlist-service -n "$ns" --timeout=180s
-          kubectl rollout status deployment/reward-service -n "$ns" --timeout=180s
+          for r in frontend task-service wishlist-service reward-service; do
+            echo "==> waiting for rollout/$r"
+            kubectl argo rollouts status "$r" -n "$ns" --timeout 600s
+          done
+          kubectl argo rollouts list rollouts -n "$ns"
 
       - name: Smoke tests (read-only)
         env:
