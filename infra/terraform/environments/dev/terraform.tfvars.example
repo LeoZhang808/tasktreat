@@ -61,5 +61,5 @@ app_subdomain = "app"
 # token.actions.githubusercontent.com, set github_oidc_provider_arn to that ARN
 # and Terraform will not try to create a duplicate provider.
 #
-# github_repository = "your-github-username/tasktreat"
+# github_repository = "LeoZhang808/tasktreat"
 # github_oidc_provider_arn = ""
