@@ -1,5 +1,12 @@
 # TaskTreat — Step 5: Public Ingress, DNS, HTTPS
 
+> **Note (post-Step 7):** the public Ingress was originally created in the
+> dev overlay (this doc as written). It has since been moved to the prod
+> overlay (`k8s/overlays/prod/`) so prod owns `app.tasktreat.dev`; dev now
+> strips the Ingress and is reached only via `kubectl port-forward`. The
+> mechanism described below is unchanged — substitute `prod` for `dev`
+> wherever a path or namespace appears.
+
 This step exposes the cluster behind a single AWS Application Load Balancer
 provisioned by the AWS Load Balancer Controller, fronted by a custom domain
 (`tasktreat.dev`) registered through the GitHub Student Developer Pack at

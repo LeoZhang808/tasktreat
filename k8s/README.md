@@ -190,21 +190,32 @@ Once Step 4 is healthy, run the full Step 5 runbook (full version in
 # 3. Install the AWS Load Balancer Controller into kube-system.
 ./scripts/install-aws-lb-controller.sh
 
-# 4. Render the dev Ingress patch from terraform output and apply.
+# 4. Render the prod Ingress patch from terraform output and apply.
+#    (Step 7 moved the Ingress from dev → prod so prod owns the public URL.)
 ./scripts/deploy-ingress.sh
 
 # 5. UPSERT the Route 53 alias for app.tasktreat.dev → ALB.
+#    Reads the ALB hostname from the Ingress in tasktreat-prod.
 ./scripts/upsert-app-dns.sh
 
 # 6. Verify everything end-to-end.
 ./scripts/verify-step5.sh
 ```
 
-The dev overlay's `ingress-patch.yaml` is **generated** from the committed
+The prod overlay's `ingress-patch.yaml` is **generated** from the committed
 `ingress-patch.yaml.template`. The rendered file is gitignored so the
 environment-specific ACM ARN is never accidentally committed. Re-run
 `scripts/render-ingress-patch.sh` after every `terraform apply` that
 changes the certificate.
+
+### Environment access
+
+| Env  | Public? | How to reach the frontend                                                  |
+| ---- | ------- | -------------------------------------------------------------------------- |
+| prod | yes     | https://app.tasktreat.dev (only env with an Ingress / ALB)                 |
+| dev  | no      | `kubectl port-forward svc/frontend 5173:80 -n tasktreat-dev`               |
+| qa   | no      | `kubectl port-forward svc/frontend 5173:80 -n tasktreat-qa`                |
+| uat  | no      | `kubectl port-forward svc/frontend 5174:80 -n tasktreat-uat`               |
 
 ---
 

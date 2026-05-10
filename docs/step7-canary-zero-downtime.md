@@ -197,6 +197,35 @@ on it — that is the one place where canary still drops requests.
 
 ---
 
+## One-time cutover: moving the Ingress from dev to prod
+
+The first `release-prod` run after this change stands up a *new* ALB in
+`tasktreat-prod`. Until you point Route 53 at it, `app.tasktreat.dev` is
+still pointed at the old dev ALB. Do this once, in this order, to avoid
+any user-visible outage:
+
+```bash
+# 1. Cut a release tag — release-prod builds, applies, renders the prod
+#    Ingress, the AWS LBC provisions a brand-new ALB in tasktreat-prod.
+git tag v0.1.0 && git push origin v0.1.0
+
+# 2. Wait for the prod Ingress to acquire an ALB hostname.
+kubectl get ingress tasktreat-ingress -n tasktreat-prod -w
+
+# 3. Repoint the Route 53 alias to the new ALB. The script reads the
+#    hostname out of the Ingress and UPSERTs the A-alias record.
+NAMESPACE=tasktreat-prod ./scripts/upsert-app-dns.sh
+
+# 4. Once DNS has propagated (curl https://app.tasktreat.dev), it's safe
+#    to remove the stale dev Ingress and let AWS deprovision the old ALB.
+kubectl delete ingress tasktreat-ingress -n tasktreat-dev
+```
+
+Order matters: step 1 brings up the new ALB *before* step 3 flips DNS,
+and step 4 removes the old one only after traffic has already moved.
+
+---
+
 ## Future work (Step 8 hooks)
 
 Once Prometheus is in the cluster, each Rollout can grow an `analysis:`
