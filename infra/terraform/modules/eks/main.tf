@@ -36,7 +36,8 @@ resource "aws_eks_cluster" "this" {
   # Enable EKS access entries so IAM roles (e.g. GitHub Actions OIDC) can be
   # granted Kubernetes API access without editing the aws-auth ConfigMap.
   access_config {
-    authentication_mode = "API_AND_CONFIG_MAP"
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
   }
 
   vpc_config {
@@ -47,6 +48,15 @@ resource "aws_eks_cluster" "this" {
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
+
+  # bootstrap_cluster_creator_admin_permissions is a ForceNew attribute that
+  # AWS only honors at cluster creation. Ignore drift on it so future plans
+  # don't try to replace the cluster.
+  lifecycle {
+    ignore_changes = [
+      access_config[0].bootstrap_cluster_creator_admin_permissions,
+    ]
+  }
 
   tags = merge(var.tags, {
     Name = var.cluster_name
