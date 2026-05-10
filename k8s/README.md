@@ -25,6 +25,26 @@ The dev overlay is the only one that should be `kubectl apply`-ed for Step 4.
 
 ---
 
+## Namespaces are bootstrapped out-of-band
+
+`Namespace` is a cluster-scoped resource and the GitHub Actions deploy role
+only has `AmazonEKSAdminPolicy` *inside* each namespace, not over it. To
+keep `kubectl apply -k` Forbidden-free, the base kustomization deliberately
+does **not** render `namespace.yaml`. Create the four namespaces once
+(from an admin principal) before any pipeline runs:
+
+```bash
+kubectl create namespace tasktreat-dev   --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace tasktreat-qa    --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace tasktreat-uat   --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace tasktreat-prod  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+`namespace.yaml` (base) and the per-overlay `namespace-patch.yaml` files are
+kept as documentation; nothing references them at render time.
+
+---
+
 ## Prerequisites
 
 - `kubectl` configured against the EKS cluster:
