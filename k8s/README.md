@@ -89,6 +89,17 @@ kept as documentation; nothing references them at render time.
      --from-literal=DATABASE_URL_REWARD="postgresql://tasktreat:${PASSWORD}@${ENDPOINT}:5432/tasktreat?schema=reward"
    ```
 
+   For qa/uat/prod, don't retype the password — once dev's secret is
+   correct, clone it into the other namespaces:
+
+   ```bash
+   ./scripts/bootstrap-db-secret.sh tasktreat-qa
+   ./scripts/bootstrap-db-secret.sh tasktreat-uat
+   ./scripts/bootstrap-db-secret.sh tasktreat-prod
+   ```
+
+   The script is idempotent and fails loudly if a key is missing.
+
 4. Restart the deployments so the new env vars take effect (only needed if
    the secret was created after the first `apply`):
 
