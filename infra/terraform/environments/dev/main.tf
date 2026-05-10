@@ -122,9 +122,13 @@ module "github_actions_oidc" {
 resource "aws_eks_access_entry" "github_actions" {
   count = var.github_repository != "" ? 1 : 0
 
-  cluster_name      = module.eks.cluster_name
-  principal_arn     = module.github_actions_oidc[0].role_arn
-  kubernetes_groups = []
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.github_actions_oidc[0].role_arn
+  # AmazonEKSAdminPolicy has a hardcoded permission set and does not honor
+  # RBAC aggregation labels, so it doesn't pick up the argo-rollouts
+  # aggregate-to-admin ClusterRole. Adding the role to a custom k8s group
+  # lets us layer a namespace-scoped Role for argoproj.io on top.
+  kubernetes_groups = ["tasktreat:deployers"]
   type              = "STANDARD"
 }
 
@@ -140,6 +144,69 @@ resource "aws_eks_access_policy_association" "github_actions" {
   }
 
   depends_on = [aws_eks_access_entry.github_actions]
+}
+
+# -----------------------------------------------------------------------------
+# argo-rollouts RBAC for the deploy role (prod namespace only).
+#
+# Why this lives in Terraform and not in the prod kustomization:
+#
+# Kubernetes RBAC blocks privilege escalation — a principal can only create
+# or modify a Role whose rules it already holds. The deploy role's
+# AmazonEKSAdminPolicy does NOT include argoproj.io verbs (the AWS-managed
+# policy has a fixed permission set and ignores RBAC aggregation labels),
+# so the deploy role cannot bootstrap a Role granting itself those verbs.
+# Terraform runs with cluster-admin creds (whoever runs `terraform apply`),
+# so it CAN create this Role + RoleBinding on the deploy role's behalf.
+#
+# The deploy role then picks up the perms via its membership in the
+# `tasktreat:deployers` group (see aws_eks_access_entry.github_actions
+# above) and prod `kubectl apply -k` can manage Rollout CRs.
+# -----------------------------------------------------------------------------
+
+resource "kubernetes_role" "deployers_argoproj_prod" {
+  count = var.github_repository != "" ? 1 : 0
+
+  metadata {
+    name      = "tasktreat-deployers-argoproj"
+    namespace = "tasktreat-prod"
+  }
+
+  rule {
+    api_groups = ["argoproj.io"]
+    resources = [
+      "rollouts",
+      "rollouts/status",
+      "rollouts/scale",
+      "analysisruns",
+      "analysistemplates",
+      "experiments",
+    ]
+    verbs = ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  }
+
+  depends_on = [aws_eks_access_policy_association.github_actions]
+}
+
+resource "kubernetes_role_binding" "deployers_argoproj_prod" {
+  count = var.github_repository != "" ? 1 : 0
+
+  metadata {
+    name      = "tasktreat-deployers-argoproj"
+    namespace = "tasktreat-prod"
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role.deployers_argoproj_prod[0].metadata[0].name
+  }
+
+  subject {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Group"
+    name      = "tasktreat:deployers"
+  }
 }
 
 # -----------------------------------------------------------------------------

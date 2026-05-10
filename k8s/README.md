@@ -45,6 +45,28 @@ kept as documentation; nothing references them at render time.
 
 ---
 
+## argoproj.io RBAC for prod is bootstrapped by Terraform
+
+The prod overlay uses Argo Rollouts (`argoproj.io/v1alpha1`) for canary
+delivery, but the deploy role's `AmazonEKSAdminPolicy` does not include
+`argoproj.io` verbs (the AWS-managed policy has a fixed permission set and
+ignores RBAC aggregation labels). The deploy role also can't bootstrap a
+`Role` granting itself those verbs — Kubernetes blocks any principal from
+creating a Role whose rules it doesn't already hold.
+
+Terraform handles it instead. `kubernetes_role.deployers_argoproj_prod` +
+`kubernetes_role_binding.deployers_argoproj_prod` in
+`infra/terraform/environments/dev/main.tf` create a namespace-scoped Role
+in `tasktreat-prod` and bind it to the `tasktreat:deployers` group that
+the GitHub Actions deploy role is in (see `aws_eks_access_entry`).
+`terraform apply` runs with cluster-admin creds, so the privilege-escalation
+guard doesn't apply.
+
+Run `terraform apply` once after pulling these changes; subsequent prod
+`kubectl apply -k` runs from CI will be able to manage Rollout CRs.
+
+---
+
 ## Prerequisites
 
 - `kubectl` configured against the EKS cluster:

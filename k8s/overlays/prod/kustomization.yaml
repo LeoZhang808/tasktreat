@@ -5,6 +5,10 @@ namespace: tasktreat-prod
 
 resources:
   - ../../base
+  # NOTE: argoproj.io RBAC for the deploy role is bootstrapped by Terraform
+  # (infra/terraform/environments/dev/main.tf — kubernetes_role.deployers_argoproj_prod).
+  # It cannot live here because the deploy role can't grant itself rules it
+  # doesn't already hold (Kubernetes privilege-escalation guard).
   # Step 7: production swaps plain Deployments for Argo Rollouts to get
   # progressive (canary) delivery. The base Deployments for these four
   # workloads are removed in the patches block below.
