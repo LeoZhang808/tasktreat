@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
-# End-to-end Step 5 deploy: render the dev overlay's Ingress patch from
-# Terraform outputs, then apply the dev overlay so the AWS Load Balancer
-# Controller provisions an ALB.
+# End-to-end deploy of the public Ingress: render the prod overlay's
+# Ingress patch from Terraform outputs, then apply the prod overlay so
+# the AWS Load Balancer Controller provisions an ALB serving
+# app.tasktreat.dev.
 #
 # Prerequisites already in place:
 #   * Terraform applied (route53, acm, alb_controller_irsa).
 #   * Name.com nameservers point at Route 53 (so ACM is ISSUED).
 #   * AWS Load Balancer Controller is installed
 #     (scripts/install-aws-lb-controller.sh).
-#   * The TaskTreat app is already deployed in tasktreat-dev (Step 4).
+#   * The TaskTreat app is already deployed in tasktreat-prod
+#     (release-prod workflow, or `kubectl apply -k k8s/overlays/prod`).
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NAMESPACE="${NAMESPACE:-tasktreat-dev}"
+NAMESPACE="${NAMESPACE:-tasktreat-prod}"
 
-echo "==> Rendering dev ingress overlay patch"
+echo "==> Rendering prod ingress overlay patch"
 "${REPO_ROOT}/scripts/render-ingress-patch.sh"
 
 echo
-echo "==> Applying dev overlay"
-kubectl apply -k "${REPO_ROOT}/k8s/overlays/dev"
+echo "==> Applying prod overlay"
+kubectl apply -k "${REPO_ROOT}/k8s/overlays/prod"
 
 echo
 echo "==> Waiting up to 3m for the Ingress to acquire an ALB ADDRESS"
