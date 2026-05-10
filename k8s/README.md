@@ -188,6 +188,36 @@ changes the certificate.
 
 ---
 
+## Step 7 — Canary in production (Argo Rollouts)
+
+`overlays/prod/` swaps the four base Deployments for Argo Rollouts so
+production releases use a progressive (canary) strategy:
+`20% → pause 60s → 50% → pause 60s → 100%`. `dev`, `qa`, and `uat` keep
+using plain Deployments.
+
+- `overlays/prod/rollouts/*-rollout.yaml` — one Rollout per service.
+- `overlays/prod/pdb/*-pdb.yaml` — PodDisruptionBudgets (`minAvailable: 1`).
+- `overlays/prod/deployment-delete-*.yaml` — `$patch: delete` patches that
+  strip the base Deployments out of the prod overlay so we don't run both
+  a Deployment and a Rollout for the same service.
+
+Install the controller once per cluster:
+
+```bash
+./scripts/install-argo-rollouts.sh
+```
+
+Demo a rollout (run `scripts/verify-zero-downtime.sh` in another terminal
+to prove no dropped requests):
+
+```bash
+./scripts/canary-demo.sh task-service v1.0.1
+```
+
+Full write-up: [`docs/step7-canary-zero-downtime.md`](../docs/step7-canary-zero-downtime.md).
+
+---
+
 ## Migrations note
 
 Each backend image currently runs
