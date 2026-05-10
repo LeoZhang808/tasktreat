@@ -21,7 +21,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="${REPO_ROOT}/infra/terraform/environments/dev"
 
-NAMESPACE="${NAMESPACE:-tasktreat-dev}"
+NAMESPACE="${NAMESPACE:-tasktreat-prod}"
 INGRESS_NAME="${INGRESS_NAME:-tasktreat-ingress}"
 
 require() {

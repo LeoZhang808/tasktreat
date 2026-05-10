@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render `k8s/overlays/dev/ingress-patch.yaml` from the committed
+# Render `k8s/overlays/prod/ingress-patch.yaml` from the committed
 # `.template` file by substituting the ACM certificate ARN and the public
 # app FQDN read out of `terraform output`.
 #
@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="${REPO_ROOT}/infra/terraform/environments/dev"
-OVERLAY_DIR="${REPO_ROOT}/k8s/overlays/dev"
+OVERLAY_DIR="${REPO_ROOT}/k8s/overlays/prod"
 TEMPLATE="${OVERLAY_DIR}/ingress-patch.yaml.template"
 OUTPUT="${OVERLAY_DIR}/ingress-patch.yaml"
 
