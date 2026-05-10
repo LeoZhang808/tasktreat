@@ -1,0 +1,110 @@
+###############################################################################
+# Argo Rollouts replacement for the task-service Deployment in production.
+#
+# Step 7 swaps prod's plain Kubernetes Deployment for a Rollout so we can do
+# progressive (canary) delivery: 20% -> pause -> 50% -> pause -> 100%.
+#
+# The pod template mirrors the base Deployment so dev/qa/uat (still
+# Deployments) and prod (this Rollout) stay behaviorally identical.
+#
+# Zero-downtime controls:
+#   * replicas: 2, maxUnavailable: 0, maxSurge: 1  -> never fewer than 2 ready
+#   * readinessProbe                                -> only ready pods take traffic
+#   * livenessProbe                                 -> stuck pods get recycled
+#   * terminationGracePeriodSeconds: 30             -> in-flight requests drain
+#   * preStop sleep 5                               -> ALB stops sending traffic
+#                                                      before the app shuts down
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: task-service
+  labels:
+    app.kubernetes.io/name: task-service
+    app.kubernetes.io/part-of: tasktreat
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-service
+  strategy:
+    canary:
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        - setWeight: 20
+        - pause:
+            duration: 60s
+        - setWeight: 50
+        - pause:
+            duration: 60s
+        - setWeight: 100
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: task-service
+        app.kubernetes.io/part-of: tasktreat
+        app.kubernetes.io/component: backend
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: task-service
+          # Kustomize image transformer rewrites this to the immutable ECR tag
+          # the release-prod workflow just pushed (e.g. v1.2.3).
+          image: tasktreat-dev-task-service:dev-latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 4001
+          env:
+            - name: PORT
+              value: "4001"
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: tasktreat-config
+                  key: NODE_ENV
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tasktreat-db-secret
+                  key: DATABASE_URL_TASK
+            # Surfaced on GET /version so we can eyeball which canary revision
+            # is currently serving during a rollout demo.
+            - name: APP_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app.kubernetes.io/version']
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4001
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                # Hold the container "alive" for 5s after the pod enters
+                # Terminating so the ALB / kube-proxy have time to remove
+                # this pod from their target lists before the app starts
+                # shedding connections.
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
