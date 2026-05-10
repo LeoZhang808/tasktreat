@@ -29,6 +29,28 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 };
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+app.get("/version", (_req, res) => {
+  res.json({ service: "task-service", version: process.env.APP_VERSION ?? "dev" });
+});
+
+const server = app.listen(PORT, () => {
   console.log(`task-service listening on :${PORT}`);
 });
+
+// Graceful shutdown: stop accepting new connections, let in-flight requests
+// drain, then exit. Paired with the pod preStop sleep + terminationGracePeriod,
+// this is what keeps a canary rollout zero-downtime.
+function shutdown(signal: string) {
+  console.log(`task-service received ${signal}, draining...`);
+  server.close((err) => {
+    if (err) {
+      console.error("server.close error", err);
+      process.exit(1);
+    }
+    process.exit(0);
+  });
+  // Hard cap so we never exceed the pod terminationGracePeriodSeconds.
+  setTimeout(() => process.exit(0), 25_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
