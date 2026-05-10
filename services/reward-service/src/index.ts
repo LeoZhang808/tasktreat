@@ -27,6 +27,24 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 };
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+app.get("/version", (_req, res) => {
+  res.json({ service: "reward-service", version: process.env.APP_VERSION ?? "dev" });
+});
+
+const server = app.listen(PORT, () => {
   console.log(`reward-service listening on :${PORT}`);
 });
+
+function shutdown(signal: string) {
+  console.log(`reward-service received ${signal}, draining...`);
+  server.close((err) => {
+    if (err) {
+      console.error("server.close error", err);
+      process.exit(1);
+    }
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 25_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
