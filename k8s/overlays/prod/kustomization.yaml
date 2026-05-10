@@ -21,10 +21,9 @@ resources:
   - pdb/frontend-pdb.yaml
 
 patches:
-  - path: namespace-patch.yaml
-    target:
-      kind: Namespace
-      name: tasktreat-dev
+  # The base no longer renders a Namespace (cluster-scoped, managed
+  # out-of-band), so namespace-patch.yaml in this dir is kept only for
+  # reference. See k8s/README.md for the one-time `kubectl create namespace`.
   - path: ingress-delete.yaml
     target:
       group: networking.k8s.io

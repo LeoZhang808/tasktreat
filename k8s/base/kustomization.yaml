@@ -6,7 +6,13 @@ commonLabels:
   app.kubernetes.io/part-of: tasktreat
 
 resources:
-  - namespace.yaml
+  # NOTE: namespaces are intentionally NOT rendered by this base. They are
+  # cluster-scoped and the GitHub Actions deploy role only has namespace-
+  # scoped admin (AmazonEKSAdminPolicy at type: namespace), so including
+  # the Namespace here makes every `kubectl apply -k` try to PATCH the
+  # namespace's labels and fail with Forbidden. namespace.yaml and the
+  # per-overlay namespace-patch.yaml files are kept as references for
+  # bootstrap (see k8s/README.md for the one-shot create commands).
   - configmap.yaml
   # secrets.example.yaml is intentionally NOT listed; the real Secret is
   # created out-of-band via `kubectl create secret generic tasktreat-db-secret`
