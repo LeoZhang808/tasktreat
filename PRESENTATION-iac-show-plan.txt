@@ -1,0 +1,166 @@
+TASKTREAT — WHAT TO SHOW FOR IAC (TERRAFORM)
+
+Plain checklist for recording or live walk-through.
+
+Line numbers in main.tf drift if the file changes.
+Re-open main.tf and skim before you film.
+
+
+--------------------------------------------------------------------------------
+WHERE TO START
+--------------------------------------------------------------------------------
+
+Open:
+
+  tasktreat/infra/terraform/environments/dev/main.tf
+
+That file stays on screen for most of this section.
+
+
+--------------------------------------------------------------------------------
+MAIN.TF — GO IN ORDER
+--------------------------------------------------------------------------------
+
+STEP 1 — locals at the top
+
+  Show: app_fqdn, grafana_fqdn, common_tags.
+
+  Say: Hostnames come from variables.
+       Tags include ManagedBy terraform so resources are clearly IaC-owned,
+       not mystery click-ops in AWS.
+
+
+STEP 2 — module vpc
+
+  Say: VPC module defines the network where EKS and RDS attach.
+
+
+STEP 3 — module iam
+
+  Say: IAM roles for the EKS control plane and worker nodes.
+
+
+STEP 4 — module ecr
+
+  Say: Four repos — frontend plus three backends — matching the monorepo.
+
+
+STEP 5 — module eks
+
+  Show: The line that passes ami_release_version from variables into the module.
+
+  Say: Cluster and managed node group.
+       Day 2 patching: bump that AMI variable and terraform apply;
+       node group rolls. No manual node replacement in the console.
+
+
+STEP 6 — github_actions_oidc, aws_eks_access_entry, aws_eks_access_policy_association
+
+  Say: GitHub Actions assumes an IAM role via OIDC.
+       Pipeline reaches the cluster API that way.
+       Scoped to namespaces — not long-lived kubeconfig secrets on runners.
+
+
+STEP 7 — kubernetes_role and kubernetes_role_binding (argoproj, tasktreat-prod)
+
+  Say: Terraform applies Kubernetes RBAC too.
+       Deploy role needs Argo Rollouts; easier to bootstrap from Terraform
+       than from the pipeline alone.
+
+
+STEP 8 — module route53 and module acm
+
+  Say: Public DNS zone plus ACM cert for HTTPS on the app hostname.
+
+
+STEP 9 — module alb_controller_irsa
+
+  Say: Load Balancer Controller uses IRSA so it can create ALBs from Ingress.
+
+
+STEP 10 — module rds
+
+  Say: Postgres in private subnets.
+       Security group allows only the EKS cluster SG — nodes reach RDS.
+       Matches assignment: RDS, codified access, not hand-wired networking.
+
+
+--------------------------------------------------------------------------------
+OTHER FILES (same folder: environments/dev)
+--------------------------------------------------------------------------------
+
+backend.tf
+
+  Show: The terraform backend "s3" block.
+
+  Say: Remote state, encryption, DynamoDB lock —
+       two applies cannot corrupt state.
+
+
+providers.tf
+
+  Show: kubernetes provider block using aws eks get-token.
+
+  Say: Terraform talks to the cluster with short-lived creds, like kubectl.
+
+
+variables.tf
+
+  Show: eks_ami_release_version.
+
+  Say: Bump and apply for worker AMI rotation (same story as Step 5).
+
+
+--------------------------------------------------------------------------------
+OPTIONAL (only if you talk about Grafana TLS)
+--------------------------------------------------------------------------------
+
+monitoring.tf
+
+  Show: module acm_grafana.
+
+  Say: Grafana hostname gets its own ACM cert — still Terraform.
+
+
+--------------------------------------------------------------------------------
+LAST VISUAL
+--------------------------------------------------------------------------------
+
+Open folder:
+
+  tasktreat/infra/terraform/modules
+
+Name each subdirectory once:
+
+  vpc
+  iam
+  ecr
+  eks
+  rds
+  route53
+  acm
+  aws-load-balancer-controller-irsa
+  github-actions-oidc
+
+Say: Each folder is a reusable module.
+
+
+--------------------------------------------------------------------------------
+CLOSEOUT (one sentence)
+--------------------------------------------------------------------------------
+
+Say: Bootstrap order, tfvars, and outputs live in infra/terraform/README.md —
+     you are not reading every variable on camera.
+
+
+--------------------------------------------------------------------------------
+IF YOU ARE SHORT ON TIME
+--------------------------------------------------------------------------------
+
+Show:
+
+  Steps 1–5
+  Then jump to steps 9–10
+  Then backend.tf, providers.tf, eks_ami_release_version
+
+Skip Step 7 unless someone asks about prod rollouts.

@@ -229,7 +229,7 @@ After `terraform apply`, the human-in-the-loop step is to copy
 `route53_name_servers` into Name.com so DNS for the domain (and the ACM
 DNS validation Terraform created) actually resolves through Route 53.
 
-See `docs/step5-ingress-dns-https.md` for the full runbook.
+See `k8s/README.md` (Step 5 — Public Ingress / DNS / HTTPS) for the shell runbook.
 
 ---
 

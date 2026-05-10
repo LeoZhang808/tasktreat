@@ -1,0 +1,58 @@
+###############################################################################
+# Grafana public Ingress template (Step 13).
+#
+# Rendered to k8s/monitoring/grafana-ingress.yaml at deploy time by either
+# scripts/install-monitoring.sh (local) or the deploy-monitoring workflow.
+# The placeholder is substituted from a Terraform output so the cert lifecycle
+# stays in Terraform.
+#
+# Placeholders:
+#   __ACM_CERTIFICATE_ARN__   ARN of the grafana.tasktreat.dev cert
+#                             (terraform output -raw grafana_acm_certificate_arn)
+#   __GRAFANA_FQDN__          grafana.tasktreat.dev
+#                             (terraform output -raw grafana_fqdn)
+#
+# The rendered file is gitignored — only the template lives in Git so that
+# environment-specific values (ARNs, FQDNs) never get committed.
+###############################################################################
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: tasktreat
+    app.kubernetes.io/component: observability
+  annotations:
+    # Matches the AWS Load Balancer Controller running in kube-system.
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # ClusterIP services like kube-prometheus-stack-grafana require IP
+    # target-type so the ALB sends traffic straight to pod IPs via the
+    # VPC CNI (NodePort would require a different Service type).
+    alb.ingress.kubernetes.io/target-type: ip
+    # HTTPS-only listener; the ssl-redirect annotation 301s anything that
+    # hits :80 over to :443.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: __ACM_CERTIFICATE_ARN__
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  ingressClassName: alb
+  rules:
+    - host: __GRAFANA_FQDN__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Set by `grafana.fullnameOverride` in
+                # kube-prometheus-stack-values.yaml.
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80

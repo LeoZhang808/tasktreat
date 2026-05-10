@@ -62,6 +62,11 @@ k8s/**/*.secret.yaml
 # (ingress-patch.yaml.template) IS committed.
 k8s/overlays/*/ingress-patch.yaml
 
+# Step 13 Grafana Ingress is rendered from a template at deploy time and
+# contains the environment-specific ACM cert ARN + FQDN. The template
+# (grafana-ingress.yaml.template) IS committed.
+k8s/monitoring/grafana-ingress.yaml
+
 
 # Local plan output (filename without extension)
 tfplan
