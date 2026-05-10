@@ -1,4 +1,4 @@
-# Template for the dev-specific Ingress patch. Rendered into
+# Template for the production Ingress patch. Rendered into
 # `ingress-patch.yaml` (gitignored) by `scripts/render-ingress-patch.sh`,
 # which fills in the variables below from `terraform output`.
 #
@@ -13,7 +13,7 @@ metadata:
     alb.ingress.kubernetes.io/certificate-arn: __ACM_CERTIFICATE_ARN__
     # Tag the ALB so we can find it later (e.g. when the Route 53 alias
     # record is created out-of-band or by ExternalDNS in a future step).
-    alb.ingress.kubernetes.io/tags: Environment=dev,Project=tasktreat,ManagedBy=kubernetes
+    alb.ingress.kubernetes.io/tags: Environment=prod,Project=tasktreat,ManagedBy=kubernetes
 spec:
   rules:
     - host: __APP_FQDN__

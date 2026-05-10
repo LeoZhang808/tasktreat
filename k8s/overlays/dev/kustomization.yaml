@@ -7,12 +7,12 @@ namespace: tasktreat-dev
 resources:
   - ../../base
 
-# `ingress-patch.yaml` is generated from `ingress-patch.yaml.template` by
-# `scripts/render-ingress-patch.sh`, which substitutes the live ACM cert
-# ARN and the public app FQDN from `terraform output`. The rendered file
-# is gitignored so a regenerated ARN never accidentally lands in Git.
+# Public Ingress now lives in the prod overlay (see
+# k8s/overlays/prod/ingress-patch.yaml.template). Dev strips the base
+# Ingress so we don't stand up a second ALB for an env that's only
+# reached over port-forward.
 patches:
-  - path: ingress-patch.yaml
+  - path: ingress-delete.yaml
     target:
       group: networking.k8s.io
       version: v1
