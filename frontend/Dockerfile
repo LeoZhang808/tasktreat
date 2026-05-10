@@ -13,7 +13,6 @@ RUN npm ci --workspace=frontend --include-workspace-root
 COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json ./frontend/
 COPY frontend/vite.config.ts frontend/postcss.config.js frontend/tailwind.config.js frontend/index.html ./frontend/
 COPY frontend/src ./frontend/src
-COPY frontend/public ./frontend/public
 
 RUN npm --workspace=frontend run build
 
