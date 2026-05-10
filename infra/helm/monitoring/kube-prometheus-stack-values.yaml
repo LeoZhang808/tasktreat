@@ -1,0 +1,342 @@
+###############################################################################
+# kube-prometheus-stack Helm values for the tasktreat EKS cluster.
+#
+# Installs (per Steps 11–13):
+#   * Prometheus (15d retention, 30Gi PVC)
+#   * Grafana (10Gi PVC, OAuth-only login behind ALB Ingress at
+#     grafana.tasktreat.dev)
+#   * Alertmanager (email via AWS SES SMTP)
+#   * Node Exporter, kube-state-metrics, Prometheus Operator
+#
+# Out-of-band prerequisites the cluster admin must create BEFORE
+# `helm upgrade --install` so the Grafana/Alertmanager pods can start:
+#
+#   1. Namespace:
+#        kubectl create namespace monitoring
+#
+#   2. GitHub OAuth client id/secret (callback URL matches your Grafana hostname):
+#        kubectl -n monitoring create secret generic grafana-github-oauth \
+#          --from-literal=client_id=...   \
+#          --from-literal=client_secret=...
+#
+#   3. Slack webhook URL for Alertmanager:
+#        kubectl -n monitoring create secret generic alertmanager-slack-webhook \
+#          --from-literal=webhook-url=https://hooks.slack.com/services/...
+#
+# Apply with:
+#   helm upgrade --install kube-prometheus-stack \
+#     prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring \
+#     --values infra/helm/monitoring/kube-prometheus-stack-values.yaml
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Cluster-wide chart selectors
+# -----------------------------------------------------------------------------
+# The chart's default ServiceMonitor/PrometheusRule selector is
+# `release: <Helm release name>`. We pin the release name to
+# `kube-prometheus-stack` in the install command above, so out-of-tree
+# PrometheusRule resources (k8s/monitoring/prometheus-rules.yaml) only need
+# to set `labels: { release: kube-prometheus-stack }` to be picked up.
+
+fullnameOverride: kube-prometheus-stack
+
+defaultRules:
+  create: true
+  rules:
+    # The chart ships a sane default rule bundle. We keep all of them on so
+    # generic kube-state / node-exporter / kubelet alerts (KubePodCrashLoopBackOff,
+    # KubeNodeNotReady, NodeFilesystemAlmostOutOfSpace, etc.) fire without
+    # us having to redeclare them. Step 12's custom rules layer on top of
+    # these — they are not a replacement.
+    alertmanager: true
+    etcd: true
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubeControllerManager: true
+    kubelet: true
+    kubeProxy: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: true
+    kubeSchedulerRecording: true
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# -----------------------------------------------------------------------------
+# Prometheus
+# -----------------------------------------------------------------------------
+prometheus:
+  enabled: true
+  prometheusSpec:
+    retention: 15d
+    retentionSize: ""
+
+    # Bind any ServiceMonitor / PodMonitor / PrometheusRule the user creates,
+    # regardless of namespace, as long as the release label matches.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+
+    # Persistence disabled: cluster has no EBS CSI driver, so PVCs stay
+    # Pending. Prometheus falls back to emptyDir — metrics history is lost
+    # on pod restart. Acceptable for dev. To re-enable: install the
+    # aws-ebs-csi-driver EKS addon and restore the storageSpec block.
+
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        memory: "1.5Gi"
+
+# -----------------------------------------------------------------------------
+# Alertmanager — Slack webhook (Step 12)
+# -----------------------------------------------------------------------------
+alertmanager:
+  enabled: true
+
+  # Mount the Slack webhook URL Secret into the Alertmanager pod so
+  # alertmanager.yml can reference it via `api_url_file`. The secret must
+  # exist before install (see header comment).
+  alertmanagerSpec:
+    secrets:
+      - alertmanager-slack-webhook
+    # Persistence disabled (see note in prometheusSpec above). Alertmanager
+    # falls back to emptyDir — silence/inhibit state is lost on pod restart.
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "128Mi"
+      limits:
+        memory: "256Mi"
+
+  config:
+    global:
+      resolve_timeout: 5m
+
+    route:
+      receiver: slack-notifications
+      group_by: ["alertname", "namespace", "severity"]
+      # Wait briefly so related alerts from the same incident batch into one
+      # Slack message instead of spamming the channel.
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # The kube-prometheus default ruleset includes a "Watchdog" alert
+        # that fires constantly to prove the pipeline is alive. Drop it
+        # so it doesn't message Slack every 4h forever.
+        - matchers:
+            - alertname = "Watchdog"
+          receiver: "null"
+        - matchers:
+            - severity = "critical"
+          receiver: slack-notifications
+          continue: true
+
+    receivers:
+      - name: "null"
+      - name: slack-notifications
+        slack_configs:
+          # `api_url_file` reads the webhook URL from disk so the URL never
+          # appears in alertmanager.yml plaintext. The secret mount lands
+          # at /etc/alertmanager/secrets/<secret-name>/<key>.
+          - api_url_file: /etc/alertmanager/secrets/alertmanager-slack-webhook/webhook-url
+            channel: "#alerts"
+            send_resolved: true
+            title: '{{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
+            text: |-
+              {{ range .Alerts -}}
+              *Summary:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Severity:* `{{ .Labels.severity }}`{{ if .Labels.namespace }} *Namespace:* `{{ .Labels.namespace }}`{{ end }}{{ if .Labels.pod }} *Pod:* `{{ .Labels.pod }}`{{ end }}
+              {{ end }}
+
+# -----------------------------------------------------------------------------
+# Grafana
+# -----------------------------------------------------------------------------
+grafana:
+  enabled: true
+
+  # The Service backing the Ingress (k8s/monitoring/grafana-ingress.yaml)
+  # uses this name. It defaults to <release>-grafana, but we override the
+  # release name above so the Service name is "kube-prometheus-stack-grafana".
+  fullnameOverride: kube-prometheus-stack-grafana
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Persistence disabled (cluster has no EBS CSI driver). Grafana falls
+  # back to emptyDir — dashboards/users/state lost on pod restart. Since
+  # dashboards here come from chart ConfigMaps and OAuth users re-import
+  # on first login, this is acceptable for dev.
+  persistence:
+    enabled: false
+
+  # Inject GitHub OAuth client_id / client_secret as env vars sourced from
+  # the kubernetes Secret bootstrapped out-of-band by
+  # scripts/bootstrap-monitoring-secrets.sh. The Secret MUST contain keys
+  # named exactly:
+  #   GF_AUTH_GITHUB_CLIENT_ID
+  #   GF_AUTH_GITHUB_CLIENT_SECRET
+  # because `envFromSecret` mounts every key as an env var with the same
+  # name, and Grafana reads `GF_<SECTION>_<KEY>` env vars at startup to
+  # override the matching grafana.ini setting. Do NOT also set these keys
+  # in the chart's top-level `env:` block — env entries beat envFrom
+  # entries in Kubernetes, so an empty `env: { GF_AUTH_GITHUB_CLIENT_ID: "" }`
+  # would silently break OAuth.
+  envFromSecret: grafana-github-oauth
+
+  # OAuth-only login. The login form is hidden so there is no
+  # username/password attack surface — Grafana redirects every unauthenticated
+  # request to GitHub.
+  grafana.ini:
+    server:
+      root_url: "https://grafana.tasktreat.dev"
+      # Behind an ALB doing HTTPS termination; tell Grafana to honour the
+      # X-Forwarded-* headers so generated URLs (OAuth callback, etc.)
+      # come out as https://grafana.tasktreat.dev and not http://...:3000.
+      enforce_domain: false
+    auth:
+      disable_login_form: true
+      oauth_auto_login: false
+      # Sign-out should send the user back to the public root so the OAuth
+      # flow restarts cleanly.
+      signout_redirect_url: "https://grafana.tasktreat.dev/login"
+    "auth.anonymous":
+      enabled: false
+    "auth.basic":
+      enabled: false
+    "auth.github":
+      enabled: true
+      allow_sign_up: true
+      scopes: "user:email,read:org"
+      auth_url: "https://github.com/login/oauth/authorize"
+      token_url: "https://github.com/login/oauth/access_token"
+      api_url: "https://api.github.com/user"
+      # Only the listed primary email(s) on GitHub can sign in. Anyone else
+      # who completes the OAuth flow is rejected with "Forbidden". The
+      # email Grafana checks is your GitHub *primary* email (scope:
+      # user:email returns it via the /user API).
+      allowed_emails: "leozhang2024@gmail.com"
+      # The allowed user lands as Editor (can author dashboards but cannot
+      # manage users / data sources). Promote yourself to Admin in the
+      # Grafana UI once after first login (Server admin → Users).
+      role_attribute_path: "'Editor'"
+    users:
+      auto_assign_org: true
+      auto_assign_org_role: Editor
+    log:
+      mode: console
+      level: info
+    analytics:
+      # Disable phone-home so we don't ship telemetry to grafana.com from
+      # a course project.
+      reporting_enabled: false
+      check_for_updates: false
+
+  # Bundled dashboards (provisioned at chart install time).
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: utc
+
+  # Loki gets added here so Grafana boots with both Prometheus and Loki
+  # data sources wired up. The Loki Service name is `loki` (release name
+  # "loki" in the same namespace).
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      isDefault: false
+      jsonData:
+        # Make labels with dots/slashes (e.g. app.kubernetes.io/name) easier
+        # to query in the Explore UI by exposing maxLines and a sensible
+        # default.
+        maxLines: 1000
+
+  # Extra prebuilt dashboards covering the acceptance criteria
+  # (CPU, memory, disk, node health, pod health, namespace usage). All are
+  # pulled from grafana.com at chart install time. Grafana IDs are stable.
+  dashboards:
+    default:
+      node-exporter-full:
+        # Node Exporter Full — granular CPU, memory, disk, network per
+        # node. Required by "Grafana shows CPU/memory/disk/node health".
+        gnetId: 1860
+        revision: 33
+        datasource: Prometheus
+      kubernetes-cluster-monitoring:
+        # Kubernetes / Compute Resources / Cluster — cluster-wide CPU and
+        # memory by namespace; covers "namespace-level resource usage".
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      k8s-views-pods:
+        # Kubernetes Views: Pods — pod-level CPU/memory/restarts; covers
+        # "Grafana shows pod health".
+        gnetId: 15760
+        revision: 30
+        datasource: Prometheus
+      k8s-views-nodes:
+        # Kubernetes Views: Nodes — node summary across the cluster.
+        gnetId: 15759
+        revision: 30
+        datasource: Prometheus
+      loki-logs:
+        # Logging dashboard fed by Loki. Useful once Step 14 is in place.
+        gnetId: 13639
+        revision: 2
+        datasource: Loki
+
+  serviceMonitor:
+    enabled: true
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      memory: "512Mi"
+
+# -----------------------------------------------------------------------------
+# Node Exporter & kube-state-metrics
+# -----------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+
+# Sub-chart values for the prometheus-community/prometheus-node-exporter
+# DaemonSet that kps installs. system-node-critical raises node-exporter
+# above default priority so the scheduler can evict an app pod and admit
+# it — matches promtail. Without this, the two collide on t3.medium's
+# 17-pod ceiling and one preempts the other.
+prometheus-node-exporter:
+  priorityClassName: system-node-critical
+
+kube-state-metrics:
+  enabled: true
+
+prometheusOperator:
+  enabled: true
+  # The default admission webhook is patched in via a hook job. On EKS this
+  # sometimes flakes on cold starts; bumping the timeout makes the install
+  # more reliable without changing behaviour.
+  admissionWebhooks:
+    patch:
+      enabled: true

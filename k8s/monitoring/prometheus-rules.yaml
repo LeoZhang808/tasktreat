@@ -1,0 +1,161 @@
+###############################################################################
+# Custom PrometheusRule for tasktreat (Step 12).
+#
+# Lives alongside (not instead of) the chart's defaultRules (see
+# infra/helm/monitoring/kube-prometheus-stack-values.yaml). Those handle
+# generic Kubernetes object-health alerts (KubePodCrashLoopBackOff,
+# KubeNodeNotReady, etc.). This file adds the specific resource-threshold
+# alerts called out in the assignment spec.
+#
+# Picked up by the Prometheus Operator via the
+# `release: kube-prometheus-stack` selector configured on the
+# Prometheus CR by the chart.
+###############################################################################
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tasktreat-app-and-cluster-alerts
+  namespace: monitoring
+  labels:
+    # Required for the Prometheus Operator instance shipped by the chart
+    # to load this rule. If you change the Helm release name, change this
+    # too — they must match.
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: tasktreat
+    app.kubernetes.io/component: observability
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # Node-level resource alerts
+    # -------------------------------------------------------------------------
+    - name: tasktreat.cluster-resources
+      interval: 30s
+      rules:
+        - alert: HighNodeCPU
+          # Per-node CPU utilization = 100% - average idle fraction.
+          # rate(... [5m]) smooths over the 5m window so a one-off spike
+          # doesn't fire; `for: 5m` adds a second 5m guard.
+          expr: |
+            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+          for: 5m
+          labels:
+            severity: warning
+            category: cluster
+          annotations:
+            summary: "High CPU on node {{ $labels.instance }}"
+            description: "Node {{ $labels.instance }} CPU has been above 80% for >5m (current: {{ $value | printf \"%.1f\" }}%)."
+
+        - alert: HighNodeMemory
+          expr: |
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+            category: cluster
+          annotations:
+            summary: "High memory on node {{ $labels.instance }}"
+            description: "Node {{ $labels.instance }} memory usage above 85% for >5m (current: {{ $value | printf \"%.1f\" }}%)."
+
+        - alert: HighNodeDiskUsage
+          # node_filesystem_avail_bytes excludes tmpfs/overlay so we only
+          # alert on the actual EBS root volume.
+          expr: |
+            (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+                  / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"})) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            category: cluster
+          annotations:
+            summary: "High disk usage on node {{ $labels.instance }} ({{ $labels.mountpoint }})"
+            description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is above 80% full for >5m (current: {{ $value | printf \"%.1f\" }}%)."
+
+    # -------------------------------------------------------------------------
+    # Workload health (pods, deployments)
+    # -------------------------------------------------------------------------
+    - name: tasktreat.workloads
+      interval: 30s
+      rules:
+        - alert: PodCrashLooping
+          # increase() with a [10m] window captures sustained restart
+          # behaviour, not a single restart from a deploy. Threshold > 3
+          # restarts in 10m matches the spec.
+          expr: |
+            increase(kube_pod_container_status_restarts_total[10m]) > 3
+          for: 2m
+          labels:
+            severity: critical
+            category: workload
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+            description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} has restarted more than 3 times in the last 10 minutes."
+
+        - alert: DeploymentReplicasUnavailable
+          # The "service unavailable" signal in spec terms: a Deployment has
+          # one or more pods that the controller cannot get to Ready.
+          #
+          # NOTE: this only covers dev/qa/uat namespaces. The prod namespace
+          # runs Argo Rollouts, not Deployments, so a failed prod rollout
+          # won't show up here. The chart's defaultRules cover that case via
+          # `KubePodNotReady` and `KubePodCrashLooping` which apply to ANY
+          # pod regardless of owner Kind. To add Rollout-specific coverage
+          # later, scrape the argo-rollouts controller's /metrics endpoint
+          # and alert on rollout_phase{phase!="Healthy"}.
+          expr: |
+            kube_deployment_status_replicas_unavailable{namespace=~"tasktreat-.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            category: workload
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has unavailable replicas"
+            description: "{{ $value }} replicas of deployment {{ $labels.namespace }}/{{ $labels.deployment }} are not Ready (5m+)."
+
+        - alert: ServiceHasNoReadyPods
+          # Catches BOTH Deployments and Rollouts: any tasktreat-owned pod
+          # group with zero Ready replicas. Uses kube_pod_status_ready joined
+          # to kube_pod_info so we get the workload name (pod prefix) for
+          # the alert annotation. Threshold > 5m so a deploy mid-rollout
+          # doesn't page.
+          expr: |
+            sum by (namespace, label_app_kubernetes_io_name) (
+              kube_pod_status_ready{condition="true",namespace=~"tasktreat-.*"}
+              * on(pod,namespace) group_left(label_app_kubernetes_io_name)
+                kube_pod_labels{namespace=~"tasktreat-.*"}
+            ) == 0
+          for: 5m
+          labels:
+            severity: critical
+            category: workload
+          annotations:
+            summary: "Service {{ $labels.namespace }}/{{ $labels.label_app_kubernetes_io_name }} has no Ready pods"
+            description: "All pods of {{ $labels.label_app_kubernetes_io_name }} in {{ $labels.namespace }} have been NotReady for >5m. This also covers prod (which runs Argo Rollouts, not Deployments)."
+
+    # -------------------------------------------------------------------------
+    # Application HTTP errors
+    #
+    # The tasktreat backend services don't yet expose Prometheus metrics
+    # (no /metrics endpoint, no ServiceMonitor). This rule is wired up
+    # against the canonical http_requests_total / status code labels so it
+    # starts firing automatically the moment we add an instrumented
+    # endpoint once services expose /metrics.
+    #
+    # Until then this rule produces zero series and never fires — that's
+    # fine; we keep it so the alert exists and dashboards/runbooks can
+    # reference it.
+    # -------------------------------------------------------------------------
+    - name: tasktreat.http
+      interval: 30s
+      rules:
+        - alert: HighHTTP5xxRate
+          expr: |
+            sum by (service, namespace) (
+              rate(http_requests_total{status=~"5..",namespace=~"tasktreat-.*"}[5m])
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            category: http
+          annotations:
+            summary: "Elevated 5xx rate on {{ $labels.namespace }}/{{ $labels.service }}"
+            description: "{{ $labels.service }} in {{ $labels.namespace }} is returning >0.05 5xx/sec for >5m."

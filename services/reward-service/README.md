@@ -29,7 +29,7 @@ Eligibility per wishlist item:
 price <= weekly_reward_budget AND is_purchased = false
 ```
 
-Selection: weighted random where `weight = item.price`. See [`docs/reward-logic.md`](../../docs/reward-logic.md).
+Selection: weighted random where weight is the item price (pricier items are more likely).
 
 ## Local development
 

@@ -1,0 +1,142 @@
+###############################################################################
+# Loki Helm values — single-binary mode, filesystem storage.
+#
+# Why single-binary: this is a course project with one EKS node group and
+# no expected ingest volume north of a few MB/s. Microservices mode (read,
+# write, backend pods + an object store) is overkill; single-binary on a
+# 20Gi PVC handles thousands of pod-log streams comfortably.
+#
+# Apply with:
+#   helm upgrade --install loki grafana/loki \
+#     --namespace monitoring \
+#     --values infra/helm/monitoring/loki-values.yaml
+###############################################################################
+
+# Pin the release/Service name so the kube-prometheus-stack values file
+# can hardcode `http://loki.monitoring.svc.cluster.local:3100`.
+fullnameOverride: loki
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+
+  commonConfig:
+    replication_factor: 1
+    path_prefix: /var/loki
+
+  schemaConfig:
+    configs:
+      # TSDB is the current recommended index for Loki >= 2.8. boltdb-shipper
+      # is deprecated. period: 24h is the minimum Loki accepts for the
+      # tsdb index.
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  storage:
+    type: filesystem
+    filesystem:
+      chunks_directory: /var/loki/chunks
+      rules_directory: /var/loki/rules
+
+  # Local retention via the compactor. Keeps disk under control without
+  # needing an external janitor.
+  limits_config:
+    retention_period: 168h          # 7 days
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    # Promtail batches up to this many entries per push. The chart default
+    # is 100; bumping to 1000 reduces request rate for chatty pods.
+    ingestion_rate_mb: 8
+    ingestion_burst_size_mb: 16
+    max_query_series: 5000
+
+  compactor:
+    working_directory: /var/loki/compactor
+    retention_enabled: true
+    delete_request_store: filesystem
+
+# -----------------------------------------------------------------------------
+# Single-binary StatefulSet config
+# -----------------------------------------------------------------------------
+singleBinary:
+  replicas: 1
+  # Persistence disabled: cluster has no EBS CSI driver. Chart v7's
+  # single-binary STS doesn't create a fallback emptyDir when persistence
+  # is off, and the container runs with readOnlyRootFilesystem=true, so
+  # Loki crashes on `mkdir /var/loki`. Mount an emptyDir at /var/loki
+  # explicitly. Log history lost on pod restart — acceptable for dev.
+  persistence:
+    enabled: false
+
+  extraVolumes:
+    - name: storage
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: storage
+      mountPath: /var/loki
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      memory: "1Gi"
+
+# -----------------------------------------------------------------------------
+# Components we don't need in single-binary mode
+# -----------------------------------------------------------------------------
+# These are explicitly disabled because the chart enables them by default in
+# the simple-scalable / microservices modes and we'd end up with idle pods.
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+
+# The chart's bundled MinIO is for object-store storage; we use filesystem
+# so MinIO is dead weight.
+minio:
+  enabled: false
+
+# Loki ships its own self-monitoring sub-chart that pulls in Grafana Agent
+# and Loki Canary. We already have kube-prometheus-stack handling
+# monitoring; the self-monitoring stack just doubles the resource cost.
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+
+# Newer Loki chart versions include a "test" pod by default. Skip it.
+test:
+  enabled: false
+
+# Gateway (nginx in front of Loki) is unnecessary inside the cluster —
+# Promtail and Grafana talk to the loki Service directly.
+gateway:
+  enabled: false
+
+# Loki Canary moved to a top-level key in chart v7 (was under `monitoring.`
+# in older versions). Synthetic-monitoring DaemonSet — one pod per node,
+# blocks helm --wait when t3.medium hits the max-pods ceiling. Not needed
+# for dev.
+lokiCanary:
+  enabled: false
+
+# Memcached sidecars added by chart v7. chunks-cache requests ~9Gi which
+# doesn't fit on t3.medium (4Gi); both also create PVCs and the cluster
+# has no EBS CSI driver. Loki runs fine without them — chunks/results are
+# served straight from the filesystem in single-binary mode.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false

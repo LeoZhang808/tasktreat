@@ -209,8 +209,8 @@ CI/CD in a later step will replace `dev-latest` with Git SHA tags.
 
 ## Step 5 — Public Ingress / DNS / HTTPS
 
-Once Step 4 is healthy, run the full Step 5 runbook (full version in
-`docs/step5-ingress-dns-https.md`):
+Once Step 4 is healthy, walk through Step 5 using the commands below (Terraform
+context for DNS/TLS is in `infra/terraform/README.md`):
 
 ```bash
 # 1. Provision Route 53 zone, ACM cert, and AWS LBC IRSA via Terraform.
@@ -277,10 +277,6 @@ to prove no dropped requests):
 ```bash
 ./scripts/canary-demo.sh task-service v1.0.1
 ```
-
-Full write-up: [`docs/step7-canary-zero-downtime.md`](../docs/step7-canary-zero-downtime.md).
-
----
 
 ## Migrations note
 

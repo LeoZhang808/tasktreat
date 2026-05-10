@@ -172,3 +172,15 @@ output "github_actions_oidc_provider_arn" {
   description = "GitHub OIDC provider ARN used in the deploy role trust policy."
   value       = length(module.github_actions_oidc) > 0 ? module.github_actions_oidc[0].oidc_provider_arn : ""
 }
+
+# ---- Step 11–13: Observability ----------------------------------------------
+
+output "grafana_fqdn" {
+  description = "Public hostname Grafana is served from. Used by scripts/install-monitoring.sh to render the Ingress template and to configure the GitHub OAuth App callback URL."
+  value       = local.grafana_fqdn
+}
+
+output "grafana_acm_certificate_arn" {
+  description = "ARN of the ACM certificate for grafana.<apex>. Wired into the Ingress' `alb.ingress.kubernetes.io/certificate-arn` annotation."
+  value       = module.acm_grafana.certificate_arn
+}

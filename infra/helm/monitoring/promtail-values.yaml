@@ -1,0 +1,86 @@
+###############################################################################
+# Promtail Helm values.
+#
+# Runs as a DaemonSet on every node, tails /var/log/pods/*/*/*.log via the
+# host mount, extracts pod metadata from the kubelet, relabels it into a
+# small set of Loki labels, and pushes to the in-cluster Loki Service.
+#
+# Apply with:
+#   helm upgrade --install promtail grafana/promtail \
+#     --namespace monitoring \
+#     --values infra/helm/monitoring/promtail-values.yaml
+###############################################################################
+
+fullnameOverride: promtail
+
+# Required tolerations for Promtail to land on every node. EKS managed
+# nodes don't carry control-plane taints, but Fargate nodes (if we ever
+# add them) do; tolerating "everything" is the documented pattern for
+# log-collection DaemonSets and matches the chart default.
+tolerations:
+  - effect: NoSchedule
+    operator: Exists
+  - effect: NoExecute
+    operator: Exists
+
+# t3.medium has a hard max-pods=17 (3 ENIs * 6 IPs - 1). The cluster
+# can fill that with application workloads before the Promtail DS lands,
+# leaving 2/3 promtail pods Pending with "Too many pods. No preemption
+# victims found". system-node-critical raises promtail above default
+# priority so the scheduler can evict an app pod and admit promtail —
+# this is exactly what the priority class is for (DS log/metric agents).
+priorityClassName: system-node-critical
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    memory: "256Mi"
+
+# Promtail needs to read /var/log/pods on the host; that mount and the
+# /var/lib/docker/containers symlink targets come from the chart defaults.
+# We keep them and just add our pipeline config below.
+
+config:
+  clients:
+    - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+  # The chart's default `snippets.common` block sets up __path__,
+  # namespace, pod, container, node_name. The default scrape job also
+  # sets `app` from app.kubernetes.io/name. We APPEND extras via
+  # `extraRelabelConfigs` — replacing `common` directly deletes the
+  # __path__ rule and Promtail silently tails zero files.
+  snippets:
+    pipelineStages:
+      - cri: {}
+
+    # Custom labels only. Kubernetes labels can't be queried as-is in
+    # LogQL because of `.` and `/` in `app.kubernetes.io/name`; rename
+    # them into short, query-friendly labels.
+    extraRelabelConfigs:
+      - action: replace
+        source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_component
+        target_label: tier
+      - action: replace
+        source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_part_of
+        target_label: project
+      # Fold the namespace into a coarse "environment" label so LogQL
+      # queries like `{environment="prod"}` work without having to know
+      # the exact namespace name. tasktreat-<env> -> <env>.
+      - action: replace
+        source_labels:
+          - __meta_kubernetes_namespace
+        regex: "tasktreat-(dev|qa|uat|prod)"
+        target_label: environment
+        replacement: "$1"
+
+# Promtail's own metrics so Prometheus can scrape it. The chart already
+# creates a ServiceMonitor when this is on; the kube-prometheus-stack
+# selector picks it up because both live in the `monitoring` namespace.
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kube-prometheus-stack

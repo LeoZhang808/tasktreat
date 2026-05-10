@@ -14,6 +14,11 @@ locals {
   # `app_subdomain` is empty we serve directly from the apex.
   app_fqdn = var.app_subdomain == "" ? var.domain_name : "${var.app_subdomain}.${var.domain_name}"
 
+  # Step 13: public hostname for Grafana. Always a subdomain — never the
+  # apex (the app already owns that, and OAuth callback URLs are tied to
+  # this exact FQDN in the GitHub OAuth App config).
+  grafana_fqdn = "${var.grafana_subdomain}.${var.domain_name}"
+
   common_tags = {
     Project     = var.project_name
     Environment = var.environment

@@ -227,5 +227,27 @@ variable "github_actions_k8s_namespaces" {
     "tasktreat-qa",
     "tasktreat-uat",
     "tasktreat-prod",
+    # Step 11–14: lets the deploy workflow apply PrometheusRule manifests
+    # and the Grafana Ingress in the monitoring namespace. The initial
+    # `helm install` of kube-prometheus-stack / loki / promtail still
+    # requires cluster-admin (CRDs are cluster-scoped) and is run from a
+    # local admin shell via scripts/install-monitoring.sh.
+    "monitoring",
   ]
+}
+
+###############################################################################
+# Step 11–13: Observability (Grafana public hostname)
+###############################################################################
+
+variable "grafana_subdomain" {
+  description = "Hostname label prepended to `domain_name` for Grafana (default \"grafana\" -> grafana.tasktreat.dev). Must match the OAuth callback URL configured in the GitHub OAuth App."
+  type        = string
+  default     = "grafana"
+}
+
+variable "grafana_alb_provisioned" {
+  description = "Flip to true on the SECOND `terraform apply` — after the Grafana Ingress is applied and the AWS Load Balancer Controller has provisioned its ALB. Gates the Route 53 alias + data source lookup that depends on the ALB existing. Leave false on first apply or `terraform apply` fails with `no matching LB found`."
+  type        = bool
+  default     = false
 }

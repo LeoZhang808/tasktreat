@@ -1,0 +1,20 @@
+###############################################################################
+# Monitoring namespace.
+#
+# This file is the reference manifest the cluster admin applies once during
+# bootstrap. It is NOT included in any kustomization — the deploy role used
+# by GitHub Actions has namespace-scoped admin only and cannot create
+# cluster-scoped Namespace objects, so the namespace must exist before any
+# CI workflow touches the monitoring stack.
+#
+# Apply with:
+#   kubectl apply -f k8s/monitoring/namespace.yaml
+###############################################################################
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    app.kubernetes.io/part-of: tasktreat
+    app.kubernetes.io/component: observability
